@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import List
+from dataclasses import dataclass, field
+from typing import List, Optional, Dict, Any
 
 
 @dataclass
