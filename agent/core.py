@@ -59,6 +59,9 @@ class SuperAgent:
         self.conversation_history.append({"role": "user", "content": user_input})
 
         system_msg = "You are a Super AI Agent. You can use tools to help the user."
+        if context:
+            system_msg += f"\n\nRelevant past context:\n{context}"
+
         messages = [{"role": "system", "content": system_msg}] + self.conversation_history.copy()
 
         # 3. Generate response with tool support
@@ -79,10 +82,13 @@ class SuperAgent:
                 function_name = tool_call.function.name if not isinstance(tool_call, dict) else tool_call["function"]["name"]
                 function_args_str = tool_call.function.arguments if not isinstance(tool_call, dict) else tool_call["function"]["arguments"]
 
-                try:
-                    function_args = json.loads(function_args_str)
-                except json.JSONDecodeError:
-                    function_args = {}
+                if isinstance(function_args_str, dict):
+                    function_args = function_args_str
+                else:
+                    try:
+                        function_args = json.loads(function_args_str)
+                    except (json.JSONDecodeError, TypeError):
+                        function_args = {}
 
                 tool_output = f"Tool {function_name} not found"
                 if function_name in self.tools:
