@@ -1,11 +1,11 @@
 from agent.core import SuperAgent
-from providers.llm import LiteLLMProvider
+from providers.llm import OpenAICompatibleProvider
 from memory.storage import MemorySystem
 from tools.controller import ComputerControllerTool
 
 def test():
     memory = MemorySystem()
-    provider = LiteLLMProvider(model="stub")
+    provider = OpenAICompatibleProvider(model="stub")
     agent = SuperAgent(provider=provider, memory_system=memory)
     agent.add_tool(ComputerControllerTool())
 
@@ -22,7 +22,7 @@ def test():
 
     # Test tool loop stub
     response = agent.process_input("use_tool test")
-    print(response)
+    print("Response:", response)
 
 if __name__ == "__main__":
     test()

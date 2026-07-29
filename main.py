@@ -3,7 +3,7 @@ from rich.console import Console
 from rich.prompt import Prompt
 
 from agent.core import SuperAgent
-from providers.llm import OpenAIProvider
+from providers.llm import OpenAICompatibleProvider
 from memory.storage import MemorySystem
 from tools.scraper import WebScraperTool
 from tools.controller import ComputerControllerTool
@@ -17,7 +17,7 @@ def main():
 
     # Initialize components
     memory = MemorySystem()
-    provider = OpenAIProvider() # Default provider
+    provider = OpenAICompatibleProvider() # Default provider
 
     agent = SuperAgent(provider=provider, memory_system=memory)
 
