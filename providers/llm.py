@@ -157,8 +157,11 @@ class GeminiCompatibleProvider(Provider):
             return MockResponse(content=f"Mock response from Gemini provider")
 
         # Simplified direct request to Gemini
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
-        headers = {"Content-Type": "application/json"}
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": self.api_key,
+        }
 
         # Convert messages to Gemini format
         gemini_contents = []

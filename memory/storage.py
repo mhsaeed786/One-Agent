@@ -26,6 +26,9 @@ class MemorySystem:
     def add_interaction(self, role: str, content: str):
         """Record an interaction for recursive self-improvement and neurosymbolic learning."""
         self.interactions.append({"role": role, "content": content})
+        # Cap stored history to the last 500 entries
+        if len(self.interactions) > 500:
+            self.interactions = self.interactions[-500:]
         self._save_memory()
 
     def get_context(self) -> str:

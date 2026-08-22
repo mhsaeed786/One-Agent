@@ -68,8 +68,14 @@ class SuperAgent:
         response = self.provider.generate(messages, tools=self.tool_schemas if self.tool_schemas else None)
         response_message = response.choices[0].message
 
-        # Handle tool calls
+        # Handle tool calls with an iteration cap to prevent runaway loops
+        MAX_TOOL_ITERATIONS = 10
+        iterations = 0
         while hasattr(response_message, "tool_calls") and response_message.tool_calls:
+            iterations += 1
+            if iterations > MAX_TOOL_ITERATIONS:
+                print(f"Tool-loop iteration cap ({MAX_TOOL_ITERATIONS}) reached; forcing final answer.", flush=True)
+                break
             # Add assistant message with tool calls to history
             self.conversation_history.append({
                 "role": "assistant",
