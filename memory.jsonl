@@ -1,0 +1,2 @@
+{"role": "user", "content": "use_tool test"}
+{"role": "agent", "content": "Mock response from simple OpenAI provider for messages: 4"}

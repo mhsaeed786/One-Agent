@@ -38,7 +38,7 @@ export const SpecialistEvolution: React.FC = () => {
       domain: 'FHIR Clinical Audit',
       rule: 'IF Patient.birthDate IS NULL AND Claim.total > $10,000 THEN FLAG Severity=Critical AND SUGGEST_FIX("Query EHR Master Index")',
       confidence: 0.98,
-      learnedFrom: 'Indexed 1,420 FHIR Bundles & CureMD tickets'
+      learnedFrom: 'Indexed 1,420 documents & tickets'
     },
     {
       id: 'rule-102',
@@ -74,7 +74,7 @@ export const SpecialistEvolution: React.FC = () => {
         },
         {
           id: 'doc-2',
-          source: 'Slack (Workspace: CureMD-Dev)',
+          source: 'Slack (Workspace: Team)',
           title: '#fhir-api channel history',
           snippet: '...discussed API rate limiting on /Observation endpoint. Added token bucket algorithm with 500 req/min limit...',
           score: 0.89,

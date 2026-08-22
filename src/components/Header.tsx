@@ -42,7 +42,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, budgetStats, onOpenRu
               ONLINE
             </span>
           </h1>
-          <p className="text-[11px] text-slate-500 font-mono">CureMD BA/QA Automation Suite → OneAgent Unified</p>
+          <p className="text-[11px] text-slate-500 font-mono">OneAgent Unified Super-App</p>
         </div>
       </div>
 

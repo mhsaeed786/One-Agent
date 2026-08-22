@@ -106,7 +106,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, pendi
           <h2 className="text-sm font-bold text-slate-100 tracking-tight">
             OneAgent <span className="text-blue-500 font-normal">SuperApp</span>
           </h2>
-          <p className="text-[10px] text-slate-500 font-mono uppercase tracking-wider">CureMD BA/QA Engine</p>
+          <p className="text-[10px] text-slate-500 font-mono uppercase tracking-wider">OneAgent Core Engine</p>
         </div>
       </div>
 

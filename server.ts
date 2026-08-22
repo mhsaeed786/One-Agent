@@ -419,7 +419,7 @@ app.post('/api/knowledge/query', async (req, res) => {
         id: 'doc-1',
         source: 'Outlook M365 (Account: Primary)',
         title: `Indexed Match for "${query.slice(0, 30)}"`,
-        snippet: `...found matching compliance guidelines regarding ${query} in CureMD technical architecture archives...`,
+        snippet: `...found matching compliance guidelines regarding ${query} in technical architecture archives...`,
         score: 0.96,
         timestamp: new Date().toLocaleDateString()
       },
@@ -479,7 +479,7 @@ app.post('/api/tools/browser-use', async (req, res) => {
       status: 'completed',
       goal: goal || 'Visual Web Navigation',
       stepsExecuted: [
-        { step: 1, action: 'GOTO_URL', target: 'https://dev.azure.com/curemd' },
+        { step: 1, action: 'GOTO_URL', target: 'https://dev.azure.com/your-org' },
         { step: 2, action: 'INSPECT_DOM_TREE', elementsFound: 14 },
         { step: 3, action: 'CLICK_BUTTON', selector: '#build-pipeline-trigger' },
         { step: 4, action: 'EXTRACT_TEXT', content: 'Pipeline #1042 Build Status: SUCCESS (0 errors)' }

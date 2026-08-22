@@ -187,7 +187,7 @@ export const LEAPLimb: React.FC<LEAPLimbProps> = ({ metrics, onTriggerCheck }) =
       {/* TAB 4: Support Triage */}
       {activeTab === 'tickets' && (
         <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-5 space-y-4 text-xs font-mono">
-          <h3 className="text-sm font-semibold text-slate-100 font-sans">CureMD QA Support Ticket Triage Queue</h3>
+          <h3 className="text-sm font-semibold text-slate-100 font-sans">QA Support Ticket Triage Queue</h3>
           <div className="p-3 bg-[#050505] rounded border border-white/10 space-y-2">
             <div className="flex justify-between font-bold text-slate-200 font-sans">
               <span>Ticket #4912: LEAP RWT Telemetry Timeout during Bulk Export</span>

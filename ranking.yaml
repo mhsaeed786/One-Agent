@@ -1,0 +1,45 @@
+# OneAgent Model Rankings
+# Edit this file to change model preference order per task class.
+# First model = preferred. Router tries in order with failover.
+
+classify:
+  - gpt-3.5-turbo
+  - claude-3-haiku
+  - gemini-2.0-flash
+  - gpt-4
+
+extract:
+  - gpt-4
+  - claude-3-sonnet
+  - gemini-2.0-flash
+  - gpt-3.5-turbo
+
+reason:
+  - gpt-4
+  - claude-3-sonnet
+  - gemini-2.5-pro
+  - gpt-3.5-turbo
+
+code:
+  - gpt-4
+  - claude-3-sonnet
+  - gemini-2.0-flash
+  - gpt-3.5-turbo
+
+long_context:
+  - gpt-4-32k
+  - claude-3-sonnet
+  - gemini-2.0-flash
+  - gpt-3.5-turbo-16k
+
+vision:
+  - gpt-4-vision-preview
+  - claude-3-sonnet
+  - gemini-2.0-flash
+
+default:
+  - gpt-4
+  - claude-3-sonnet
+  - gemini-2.0-flash
+  - gpt-3.5-turbo
+  - ollama/llama2

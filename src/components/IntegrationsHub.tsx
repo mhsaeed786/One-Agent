@@ -42,8 +42,8 @@ export const IntegrationsHub: React.FC = () => {
       id: 'int-1',
       category: 'm365',
       name: 'Microsoft 365 & Graph API',
-      accountLabel: 'Work Account (CureMD Corporate)',
-      endpointOrOrg: 'graph.microsoft.com/v1.0 (Tenant: curemd.onmicrosoft.com)',
+      accountLabel: 'Work Account (Personal)',
+      endpointOrOrg: 'graph.microsoft.com/v1.0 (Tenant: your-tenant.onmicrosoft.com)',
       status: 'connected',
       lastSynced: '2 mins ago'
     },
@@ -60,8 +60,8 @@ export const IntegrationsHub: React.FC = () => {
       id: 'int-3',
       category: 'slack',
       name: 'Slack Workspace',
-      accountLabel: 'CureMD Engineering Slack',
-      endpointOrOrg: 'curemd-dev.slack.com',
+      accountLabel: 'Team Slack',
+      endpointOrOrg: 'your-team.slack.com',
       status: 'connected',
       lastSynced: '1 min ago'
     },
@@ -70,7 +70,7 @@ export const IntegrationsHub: React.FC = () => {
       category: 'azure_devops',
       name: 'Azure DevOps On-Prem TFS',
       accountLabel: 'On-Prem Server instance',
-      endpointOrOrg: 'tfs.internal.curemd.com/DefaultCollection',
+      endpointOrOrg: 'tfs.internal.example.com/DefaultCollection',
       status: 'connected',
       lastSynced: '5 mins ago'
     },
@@ -79,7 +79,7 @@ export const IntegrationsHub: React.FC = () => {
       category: 'azure_devops',
       name: 'Azure DevOps Online',
       accountLabel: 'Cloud ADO Account',
-      endpointOrOrg: 'dev.azure.com/curemd-cloud',
+      endpointOrOrg: 'dev.azure.com/your-org',
       status: 'connected',
       lastSynced: '8 mins ago'
     },
@@ -87,8 +87,8 @@ export const IntegrationsHub: React.FC = () => {
       id: 'int-6',
       category: 'github',
       name: 'GitHub Account',
-      accountLabel: 'Org Account (@curemd-org)',
-      endpointOrOrg: 'github.com/curemd-org',
+      accountLabel: 'Org Account (@your-org)',
+      endpointOrOrg: 'github.com/your-org',
       status: 'connected',
       lastSynced: '12 mins ago'
     },
@@ -106,7 +106,7 @@ export const IntegrationsHub: React.FC = () => {
       category: 'iot',
       name: 'IoT MQTT Sensor Gateway',
       accountLabel: 'Lab Environment Sensors',
-      endpointOrOrg: 'mqtt://iot-broker.internal.curemd.com:1883',
+      endpointOrOrg: 'mqtt://iot-broker.internal.example.com:1883',
       status: 'connected',
       lastSynced: '30 secs ago'
     },
