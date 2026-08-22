@@ -9,9 +9,9 @@ import dotenv from 'dotenv';
 const execFileAsync = promisify(execFile);
 
 // Run a command with argv-array arguments (no shell, no interpolation of request data)
-async function runPython(args: string[], options: ExecFileOptions = {}): Promise<string> {
-  const { stdout } = await execFileAsync('python3', args, { maxBuffer: 1024 * 1024, ...options });
-  return stdout;
+async function runPython(args: string[], options: ExecFileOptions = {}): Promise<{ stdout: string }> {
+  const { stdout } = await execFileAsync('python3', args, { maxBuffer: 1024 * 1024, encoding: 'utf8', ...options });
+  return { stdout: String(stdout) };
 }
 
 dotenv.config();
@@ -561,8 +561,7 @@ app.get('/api/workspace/context', async (_req, res) => {
   try {
 
     try {
-      const ctx = await runPython(['-c', 'from core.workspace import WorkspaceManager; wm = WorkspaceManager(); print(wm.build_system_prompt_context())']);
-      res.json({ context: ctx.trim() || '(empty workspace)' });
+      res.json({ context: ((await runPython(['-c', 'from core.workspace import WorkspaceManager; wm = WorkspaceManager(); print(wm.build_system_prompt_context())'])).stdout).trim() || '(empty workspace)' });
     } catch {
       res.json({
         context: `# OneAgent Workspace Context\n\n## IDENTITY.md\n**Name:** OneAgent\n**Emoji:** 🧠\n\n## SOUL.md\nYou are OneAgent, a generalist AI agent that learns from your data and evolves specialist limbs.\n\n## AGENTS.md\nPlan → Execute → Observe → Repeat\n\n## USER.md\n*(Not yet configured — update via the Specialist Evolution tab)*`
@@ -578,7 +577,7 @@ app.post('/api/workspace/initialize', async (req, res) => {
     if (!validateObjectBody(req, res)) return;
     const { user_name, user_role } = req.body;
     try {
-      const result = await runPython(['-c', `from core.workspace import WorkspaceManager; wm = WorkspaceManager(); wm.initialize_default_workspace(${JSON.stringify(String(user_name || ''))}, ${JSON.stringify(String(user_role || ''))}); print('OK')`]);
+      const result = (await runPython(['-c', `from core.workspace import WorkspaceManager; wm = WorkspaceManager(); wm.initialize_default_workspace(${JSON.stringify(String(user_name || ''))}, ${JSON.stringify(String(user_role || ''))}); print('OK')`])).stdout;
       res.json({ status: 'initialized', result: result.trim() });
     } catch {
       res.json({ status: 'simulated', message: 'Workspace initialized with default files' });
@@ -592,7 +591,7 @@ app.post('/api/workspace/initialize', async (req, res) => {
 app.get('/api/sessions', async (_req, res) => {
   try {
     try {
-      const result = await runPython(['-c', 'from core.session import SessionManager; sm = SessionManager(); import json; print(json.dumps(sm.list_sessions()))']);
+      const result = (await runPython(['-c', 'from core.session import SessionManager; sm = SessionManager(); import json; print(json.dumps(sm.list_sessions()))'])).stdout;
       res.json(JSON.parse(result));
     } catch {
       res.json([
@@ -1126,7 +1125,7 @@ app.get('/api/observability/traces', async (_req, res) => {
   }
 });
 
-app.post('/api/observability/traces/clear', async (_req, res) => {
+app.post('/api/observability/traces/clear', async (req, res) => {
   try {
     if (!validateObjectBody(req, res)) return;
     res.json({ status: 'cleared' });
