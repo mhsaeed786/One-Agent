@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { execFile, ExecFileOptions } from 'child_process';
 import { promisify } from 'util';
+import { randomUUID } from 'crypto';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 
@@ -18,7 +19,47 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+const MAX_BODY_BYTES = 1024 * 1024; // 1 MB
+
+// Content-type gate: only accept JSON bodies on API writes.
+app.use((req, res, next) => {
+  if (!['POST', 'PUT', 'PATCH'].includes(req.method)) return next();
+  const ct = (req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  if (ct && ct !== 'application/json') {
+    return res.status(400).json({ error: `unsupported content-type: ${ct}; expected application/json` });
+  }
+  next();
+});
+
+app.use(express.json({ limit: `${MAX_BODY_BYTES} bytes` }));
+
+// Body validation: reject oversized payloads and non-object bodies with 400.
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err?.type === 'entity.too.large' || err?.statusCode === 413) {
+    return res.status(400).json({ error: `request body exceeds ${MAX_BODY_BYTES} byte limit` });
+  }
+  if (err?.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'malformed JSON body' });
+  }
+  next(err);
+});
+
+function validateObjectBody(req: express.Request, res: express.Response): boolean {
+  const body = req.body;
+  if (body === undefined || body === null || Array.isArray(body) || typeof body !== 'object') {
+    res.status(400).json({ error: 'request body must be a JSON object' });
+    return false;
+  }
+  return true;
+}
+
+// Central error handler: clients get a generic message + correlationId;
+// details are logged server-side only.
+function handleServerError(res: express.Response, err: any): void {
+  const correlationId = randomUUID();
+  console.error(`[error ${correlationId}]`, err);
+  res.status(500).json({ error: 'internal error', correlationId });
+}
 
 // Initialize GoogleGenAI client lazily
 function getGeminiClient(): GoogleGenAI | null {
@@ -53,6 +94,7 @@ app.get('/api/health', (_req, res) => {
 // 1. LLM Router direct generation
 app.post('/api/llm/generate', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { prompt, model = 'gemini-3.6-flash', taskClass = 'reason', systemInstruction } = req.body;
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });
@@ -92,13 +134,14 @@ Analysis completed for prompt: "${prompt.slice(0, 60)}..."
     });
   } catch (err: any) {
     console.error('Error in /api/llm/generate:', err);
-    res.status(500).json({ error: err.message || 'LLM generation failed' });
+    handleServerError(res, err);
   }
 });
 
 // 2. Generic Agent Loop Execution (Plan -> Tool -> Observe -> Output)
 app.post('/api/agent/run', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { taskPrompt, module = 'fhir', taskClass = 'reason', preferredModel = 'gemini-3.6-flash' } = req.body;
     const ai = getGeminiClient();
 
@@ -174,13 +217,14 @@ Task: ${taskPrompt}
       startedAt: new Date(startTime).toLocaleString(),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Agent loop execution failed' });
+    handleServerError(res, err);
   }
 });
 
 // 3. FHIR Inconsistency Audit Endpoint
 app.post('/api/fhir/audit', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { resourceType = 'Patient', resourceData } = req.body;
     const issues = [];
 
@@ -223,7 +267,7 @@ app.post('/api/fhir/audit', async (req, res) => {
       issues,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -232,6 +276,7 @@ app.post('/api/fhir/audit', async (req, res) => {
 // 4a. Author a new module using core.meta.cli author
 app.post('/api/meta/author', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { moduleName, promptRequirements } = req.body;
     if (!moduleName || !promptRequirements) {
       return res.status(400).json({ error: 'moduleName and promptRequirements are required' });
@@ -293,7 +338,7 @@ app.post('/api/meta/author', async (req, res) => {
       return res.json(fallbackModule);
     }
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -330,6 +375,7 @@ app.get('/api/meta/list', async (_req, res) => {
 // 4c. Update module status (approve / reject / revert)
 app.post('/api/meta/status', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { id, status } = req.body;
     if (!id || !status) {
       return res.status(400).json({ error: 'id and status are required' });
@@ -338,13 +384,14 @@ app.post('/api/meta/status', async (req, res) => {
     const m = JSON.parse(stdout);
     res.json(m);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 // 4d. Execute module inside isolated sandbox
 app.post('/api/meta/run', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { id, inputData } = req.body;
     if (!id) {
       return res.status(400).json({ error: 'id is required' });
@@ -353,13 +400,14 @@ app.post('/api/meta/run', async (req, res) => {
     const { stdout } = await runPython(['-m', 'core.meta.cli', 'run', '--id', String(id), '--input', inputJson]);
     res.json(JSON.parse(stdout));
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 // 5. Knowledge Base & RAG Endpoint
 app.post('/api/knowledge/query', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { query } = req.body;
     if (!query) {
       return res.status(400).json({ error: 'Query parameter is required' });
@@ -395,13 +443,14 @@ app.post('/api/knowledge/query', async (req, res) => {
 
     return res.json({ query, resultsCount: RAGResults.length, results: RAGResults });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 // Firecrawl Scraping Endpoint
 app.post('/api/tools/firecrawl', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { url } = req.body;
     const targetUrl = url || 'https://www.hl7.org/fhir/overview.html';
     
@@ -417,13 +466,14 @@ app.post('/api/tools/firecrawl', async (req, res) => {
       }
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 // Browser-Use Playwright Agent Endpoint
 app.post('/api/tools/browser-use', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { goal } = req.body;
     return res.json({
       status: 'completed',
@@ -437,13 +487,14 @@ app.post('/api/tools/browser-use', async (req, res) => {
       screenshotUrl: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"><rect width="400" height="200" fill="%230d1117"/><text x="20" y="40" fill="%2358a6ff" font-family="monospace">Playwright Headless Chrome - Browser-Use</text><text x="20" y="80" fill="%233fb950" font-family="monospace">✓ Goal Completed: ${goal || 'Navigation'}</text></svg>`
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 // 6. Deep Research & SaaS Opportunity Finder
 app.post('/api/research/run', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { topic } = req.body;
     const ai = getGeminiClient();
 
@@ -497,7 +548,7 @@ app.post('/api/research/run', async (req, res) => {
       date: new Date().toLocaleDateString(),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -518,12 +569,13 @@ app.get('/api/workspace/context', async (_req, res) => {
       });
     }
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 app.post('/api/workspace/initialize', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { user_name, user_role } = req.body;
     try {
       const result = await runPython(['-c', `from core.workspace import WorkspaceManager; wm = WorkspaceManager(); wm.initialize_default_workspace(${JSON.stringify(String(user_name || ''))}, ${JSON.stringify(String(user_role || ''))}); print('OK')`]);
@@ -532,7 +584,7 @@ app.post('/api/workspace/initialize', async (req, res) => {
       res.json({ status: 'simulated', message: 'Workspace initialized with default files' });
     }
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -549,17 +601,18 @@ app.get('/api/sessions', async (_req, res) => {
       ]);
     }
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 app.post('/api/sessions/create', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { agent_id = 'main' } = req.body;
     const sessionId = `sess-${Date.now()}`;
     res.json({ session_id: sessionId, agent_id, status: 'active', created_at: new Date().toISOString() });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -574,7 +627,7 @@ app.get('/api/sessions/:sessionId/liveness', async (req, res) => {
       last_interaction: new Date().toISOString(),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -612,6 +665,7 @@ app.get('/api/agent/stream/:runId', async (req, res) => {
 // 11. Sub-Agent Management
 app.post('/api/subagent/spawn', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { parent_session_id, task, context_mode = 'isolated' } = req.body;
     if (!parent_session_id || !task) {
       return res.status(400).json({ error: 'parent_session_id and task are required' });
@@ -627,7 +681,7 @@ app.post('/api/subagent/spawn', async (req, res) => {
       message: 'Sub-agent spawned. Use GET /api/subagent/:runId to check status.',
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -642,7 +696,7 @@ app.get('/api/subagent/:runId', async (req, res) => {
       runtime_ms: 1200,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -656,7 +710,7 @@ app.get('/api/subagent', async (_req, res) => {
       runs: [],
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -671,7 +725,7 @@ app.get('/api/harnesses', async (_req, res) => {
       default: 'gemini',
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -696,7 +750,7 @@ app.get('/api/capabilities', async (_req, res) => {
       capability_types: ['text_inference', 'web_search', 'web_fetch', 'browser_control', 'code_execution', 'file_ops', 'shell_exec', 'image_generation', 'image_analysis', 'data_storage', 'message_channel', 'scheduler', 'rag', 'embedding', 'mcp_server', 'skill_provider', 'meta_author'],
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -712,19 +766,20 @@ app.get('/api/hooks', async (_req, res) => {
       events: ['before_model_resolve', 'before_prompt_build', 'before_agent_reply', 'after_agent_reply', 'before_tool_call', 'after_tool_call', 'tool_result_persist', 'session_create', 'session_start', 'session_end', 'session_compact', 'before_message_send', 'after_message_receive', 'gateway_startup', 'gateway_shutdown'],
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 app.post('/api/hooks/register', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { event, name, priority = 50, description = '' } = req.body;
     if (!event || !name) {
       return res.status(400).json({ error: 'event and name are required' });
     }
     res.json({ status: 'registered', event, name, priority, description });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -755,12 +810,13 @@ app.get('/api/recipes', async (_req, res) => {
       },
     ]);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 app.post('/api/recipes/:recipeId/run', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { recipeId } = req.params;
     const { params = {} } = req.body;
     res.json({
@@ -777,7 +833,7 @@ app.post('/api/recipes/:recipeId/run', async (req, res) => {
       duration_ms: 3980,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -789,22 +845,24 @@ app.get('/api/diagnostics/flags', async (_req, res) => {
       available_flags: ['gateway.*', 'browser.act', 'session.long_running', 'session.stalled', 'timeline'],
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 app.post('/api/diagnostics/flags', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { flag, action = 'enable' } = req.body;
     res.json({ status: action, flag });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 // 17. Queue / Steering
 app.post('/api/queue/steer/:sessionId', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { sessionId } = req.params;
     const { content } = req.body;
     res.json({
@@ -813,12 +871,13 @@ app.post('/api/queue/steer/:sessionId', async (req, res) => {
       message: 'Steering message queued. Will be delivered after current tool calls, before next LLM call.',
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 app.post('/api/queue/followup/:sessionId', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { sessionId } = req.params;
     const { content } = req.body;
     res.json({
@@ -827,13 +886,14 @@ app.post('/api/queue/followup/:sessionId', async (req, res) => {
       message: 'Followup message queued. Will start a new turn after current one ends.',
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 // 18. Security: Command Validation
 app.post('/api/security/validate-command', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { command } = req.body;
     const dangerous = /(?:;|\|\||&&|`|\$\(|\$\{|\n|\r|>\s|<\s|\(\s*\))/;
     const allowed = new Set(['python', 'python3', 'node', 'npm', 'npx', 'git', 'curl', 'docker', 'pytest']);
@@ -853,7 +913,7 @@ app.post('/api/security/validate-command', async (req, res) => {
       allowed_binaries: [...allowed].sort(),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -873,6 +933,7 @@ app.get('/api/providers', (_req, res) => {
 // 20. Run a native skill
 app.post('/api/skills/:name/run', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { name } = req.params;
     const { query, provider = 'gemini:gemini-2.5-flash', workspace = '.', extra = {} } = req.body;
     const script = `
@@ -888,13 +949,14 @@ asyncio.run(main())
     const { stdout } = await runPython(['-c', script], { cwd: path.join(__dirname, 'core') });
     res.json({ skill: name, result: JSON.parse(stdout || '{}') });
   } catch (err: any) {
-    res.status(500).json({ error: err.message, stderr: err.stderr });
+    handleServerError(res, err);
   }
 });
 
 // 21. Run coding agent
 app.post('/api/coding/run', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { query, provider = 'gemini:gemini-2.5-flash', workspace = '.' } = req.body;
     const script = `
 import asyncio, json
@@ -910,13 +972,14 @@ asyncio.run(main())
     const { stdout } = await runPython(['-c', script], { cwd: path.join(__dirname, 'core') });
     res.json(JSON.parse(stdout || '{}'));
   } catch (err: any) {
-    res.status(500).json({ error: err.message, stderr: err.stderr });
+    handleServerError(res, err);
   }
 });
 
 // 22. Scrape URL
 app.post('/api/scrape', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { url, javascript = true, screenshot = false, wait_for } = req.body;
     const script = `
 import asyncio, json
@@ -932,13 +995,14 @@ asyncio.run(main())
     const { stdout } = await runPython(['-c', script], { cwd: path.join(__dirname, 'core') });
     res.json(JSON.parse(stdout || '{}'));
   } catch (err: any) {
-    res.status(500).json({ error: err.message, stderr: err.stderr });
+    handleServerError(res, err);
   }
 });
 
 // 23. Search / research stub
 app.post('/api/research/run', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { query, provider = 'gemini:gemini-2.5-flash' } = req.body;
     const script = `
 import asyncio, json
@@ -952,7 +1016,7 @@ asyncio.run(main())
     const { stdout } = await runPython(['-c', script], { cwd: path.join(__dirname, 'core') });
     res.json({ result: JSON.parse(stdout || '{}') });
   } catch (err: any) {
-    res.status(500).json({ error: err.message, stderr: err.stderr });
+    handleServerError(res, err);
   }
 });
 
@@ -971,6 +1035,7 @@ app.get('/api/tools', (_req, res) => {
 // 25. Policy check
 app.post('/api/policy/check', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { tool, input } = req.body;
     const script = `
 from oneagent.core.policy import PolicyEngine, PolicyDecision, ToolPolicy
@@ -982,13 +1047,14 @@ print(decision.value)
     const { stdout } = await runPython(['-c', script], { cwd: path.join(__dirname, 'core') });
     res.json({ tool, decision: (stdout || 'allow').trim() });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 // 26. Tavily Search (Agent-optimized web search)
 app.post('/api/search/tavily', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { query, max_results = 5, search_depth = 'basic', include_answer = false } = req.body;
     if (!query) {
       return res.status(400).json({ error: 'Query is required' });
@@ -1005,7 +1071,7 @@ asyncio.run(main())
     const { stdout } = await runPython(['-c', script], { cwd: path.join(__dirname, 'core') });
     res.json(JSON.parse(stdout || '{}'));
   } catch (err: any) {
-    res.status(500).json({ error: err.message, stderr: err.stderr });
+    handleServerError(res, err);
   }
 });
 
@@ -1014,29 +1080,31 @@ app.get('/api/mcp/servers', async (_req, res) => {
   try {
     res.json({ servers: [] });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 app.post('/api/mcp/servers', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { name, command, args = [], env = {} } = req.body;
     if (!name || !command) {
       return res.status(400).json({ error: 'name and command are required' });
     }
     res.json({ status: 'connected', name, tools: [] });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 app.post('/api/mcp/servers/:name/call', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { name } = req.params;
     const { tool_name, args = {} } = req.body;
     res.json({ server: name, tool: tool_name, result: [] });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -1045,7 +1113,7 @@ app.delete('/api/mcp/servers/:name', async (req, res) => {
     const { name } = req.params;
     res.json({ status: 'disconnected', name });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -1054,34 +1122,37 @@ app.get('/api/observability/traces', async (_req, res) => {
   try {
     res.json({ spans: [], summary: { span_count: 0, total_latency_ms: 0, total_cost_usd: 0, total_input_tokens: 0, total_output_tokens: 0 } });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 app.post('/api/observability/traces/clear', async (_req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     res.json({ status: 'cleared' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 // 29. RAG / Vector Store
 app.post('/api/rag/ingest', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { documents } = req.body;
     res.json({ status: 'ingested', count: documents?.length || 0 });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
 app.post('/api/rag/search', async (req, res) => {
   try {
+    if (!validateObjectBody(req, res)) return;
     const { query, top_k = 5 } = req.body;
     res.json({ results: [] });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
   }
 });
 
@@ -1090,7 +1161,16 @@ app.get('/api/providers/fallbacks', (_req, res) => {
   try {
     res.json({ providers: ['gemini', 'openai', 'anthropic'], fallback_chains: {} });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    handleServerError(res, err);
+  }
+});
+
+// Central error middleware (registered after all routes).
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (!res.headersSent) {
+    handleServerError(res, err);
+  } else {
+    console.error('[error] response already sent:', err);
   }
 });
 

@@ -1,8 +1,15 @@
 import abc
 import json
+import logging
 import os
 import requests
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+# Provider-level HTTP timeout: (connect, read) seconds.
+PROVIDER_TIMEOUT = (10, 30)
+
 
 class Provider(abc.ABC):
     """Base class for LLM providers."""
@@ -25,14 +32,19 @@ class MockResponse:
         self.choices = [Choice(Message(content, tool_calls))]
 
 
+class ProviderError(Exception):
+    """Raised when an LLM provider API call fails."""
+
+
 class OpenAICompatibleProvider(Provider):
     """
     A simple provider that supports any OpenAI-compatible API (e.g., OpenAI, vLLM, Ollama, Together, Groq).
     """
-    def __init__(self, model: str = "gpt-4o-mini", api_key: str = None, base_url: str = "https://api.openai.com/v1"):
+    def __init__(self, model: str = "gpt-4o-mini", api_key: str = None, base_url: str = "https://api.openai.com/v1", timeout=PROVIDER_TIMEOUT):
         self.model = model
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
         self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
 
     def generate(self, messages: List[Dict[str, str]], tools: List[Dict] = None, **kwargs) -> Any:
         if self.model == "stub":
@@ -56,7 +68,12 @@ class OpenAICompatibleProvider(Provider):
             payload["tools"] = tools
 
         try:
-            response = requests.post(f"{self.base_url}/chat/completions", headers=headers, json=payload)
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=self.timeout,
+            )
             response.raise_for_status()
             data = response.json()
 
@@ -86,17 +103,18 @@ class OpenAICompatibleProvider(Provider):
             )
 
         except Exception as e:
-            return MockResponse(content=f"Error communicating with OpenAI compatible API: {str(e)}")
+            raise ProviderError(f"OpenAI-compatible API call failed: {e}") from e
 
 
 class AnthropicCompatibleProvider(Provider):
     """
     A simple provider for Anthropic format.
     """
-    def __init__(self, model: str = "claude-3-haiku-20240307", api_key: str = None, base_url: str = "https://api.anthropic.com/v1"):
+    def __init__(self, model: str = "claude-3-haiku-20240307", api_key: str = None, base_url: str = "https://api.anthropic.com/v1", timeout=PROVIDER_TIMEOUT):
         self.model = model
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
 
     def generate(self, messages: List[Dict[str, str]], tools: List[Dict] = None, **kwargs) -> Any:
         if self.model == "stub":
@@ -129,7 +147,12 @@ class AnthropicCompatibleProvider(Provider):
         # ... translation logic would go here if tools were provided ...
 
         try:
-            response = requests.post(f"{self.base_url}/messages", headers=headers, json=payload)
+            response = requests.post(
+                f"{self.base_url}/messages",
+                headers=headers,
+                json=payload,
+                timeout=self.timeout,
+            )
             response.raise_for_status()
             data = response.json()
 
@@ -141,16 +164,17 @@ class AnthropicCompatibleProvider(Provider):
             return MockResponse(content=content)
 
         except Exception as e:
-            return MockResponse(content=f"Error communicating with Anthropic API: {str(e)}")
+            raise ProviderError(f"Anthropic API call failed: {e}") from e
 
 
 class GeminiCompatibleProvider(Provider):
     """
     A simple provider for Gemini format.
     """
-    def __init__(self, model: str = "gemini-1.5-flash", api_key: str = None):
+    def __init__(self, model: str = "gemini-1.5-flash", api_key: str = None, timeout=PROVIDER_TIMEOUT):
         self.model = model
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
+        self.timeout = timeout
 
     def generate(self, messages: List[Dict[str, str]], tools: List[Dict] = None, **kwargs) -> Any:
         if self.model == "stub":
@@ -175,7 +199,7 @@ class GeminiCompatibleProvider(Provider):
         payload = {"contents": gemini_contents}
 
         try:
-            response = requests.post(url, headers=headers, json=payload)
+            response = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
 
@@ -186,4 +210,4 @@ class GeminiCompatibleProvider(Provider):
             return MockResponse(content=content)
 
         except Exception as e:
-            return MockResponse(content=f"Error communicating with Gemini API: {str(e)}")
+            raise ProviderError(f"Gemini API call failed: {e}") from e

@@ -1,6 +1,22 @@
-from typing import List, Dict, Any
-from providers.llm import Provider
 import json
+import logging
+import time
+from typing import List, Dict, Any
+
+from providers.llm import Provider, ProviderError
+
+logger = logging.getLogger(__name__)
+
+
+def _wrap_tool_result(tool_output: Any) -> str:
+    """Wrap a tool result as a structured {status, data} JSON envelope."""
+    if isinstance(tool_output, dict) and "status" in tool_output:
+        # Already structured
+        return json.dumps(tool_output)
+    if isinstance(tool_output, dict) and isinstance(tool_output.get("error"), str):
+        return json.dumps({"status": "error", "data": tool_output})
+    return json.dumps({"status": "ok", "data": tool_output})
+
 
 class SuperAgent:
     def __init__(self, provider: Provider, memory_system: Any = None):
@@ -45,6 +61,31 @@ class SuperAgent:
 
         self.tool_schemas.append(schema)
 
+    def _execute_tool(self, function_name: str, function_args: Dict[str, Any]) -> str:
+        """Execute a single tool call and return a structured JSON result envelope."""
+        start = time.monotonic()
+        args_summary = ", ".join(f"{k}={str(v)[:60]}" for k, v in list(function_args.items())[:3])
+
+        try:
+            if function_name not in self.tools:
+                result = {"status": "error", "data": f"Tool {function_name} not found"}
+            else:
+                tool = self.tools[function_name]
+                # Extract the first argument value generically since we just mapped single args above
+                arg_val = list(function_args.values())[0] if function_args else ""
+                output = tool.execute(arg_val)
+                result = json.loads(_wrap_tool_result(output))
+        except Exception as e:
+            logger.exception("Tool %s raised", function_name)
+            result = {"status": "error", "data": f"{type(e).__name__}: {e}"}
+
+        duration_ms = (time.monotonic() - start) * 1000
+        logger.debug(
+            "tool=%s args=[%s] status=%s duration_ms=%.1f",
+            function_name, args_summary, result.get("status"), duration_ms,
+        )
+        return json.dumps(result)
+
     def process_input(self, user_input: str) -> str:
         """Core loop to process input, consult memory, use tools, and generate response."""
 
@@ -64,18 +105,29 @@ class SuperAgent:
 
         messages = [{"role": "system", "content": system_msg}] + self.conversation_history.copy()
 
-        # 3. Generate response with tool support
-        response = self.provider.generate(messages, tools=self.tool_schemas if self.tool_schemas else None)
+        # 2. Generate response with tool support; provider failures surface as an error envelope
+        start = time.monotonic()
+        try:
+            response = self.provider.generate(messages, tools=self.tool_schemas if self.tool_schemas else None)
+        except ProviderError as e:
+            logger.debug("provider.generate failed in %.1fms: %s", (time.monotonic() - start) * 1000, e)
+            return json.dumps({"status": "error", "data": f"LLM provider failed: {e}"})
         response_message = response.choices[0].message
 
         # Handle tool calls with an iteration cap to prevent runaway loops
         MAX_TOOL_ITERATIONS = 10
         iterations = 0
         while hasattr(response_message, "tool_calls") and response_message.tool_calls:
+            iter_start = time.monotonic()
             iterations += 1
             if iterations > MAX_TOOL_ITERATIONS:
                 print(f"Tool-loop iteration cap ({MAX_TOOL_ITERATIONS}) reached; forcing final answer.", flush=True)
                 break
+
+            logger.debug(
+                "iteration=%d tool_calls=%d", iterations, len(response_message.tool_calls),
+            )
+
             # Add assistant message with tool calls to history
             self.conversation_history.append({
                 "role": "assistant",
@@ -96,12 +148,7 @@ class SuperAgent:
                     except (json.JSONDecodeError, TypeError):
                         function_args = {}
 
-                tool_output = f"Tool {function_name} not found"
-                if function_name in self.tools:
-                    tool = self.tools[function_name]
-                    # Extract the first argument value generically since we just mapped single args above
-                    arg_val = list(function_args.values())[0] if function_args else ""
-                    tool_output = tool.execute(arg_val)
+                tool_output = self._execute_tool(function_name, function_args)
 
                 # Add tool result to history
                 tool_call_id = tool_call.id if not isinstance(tool_call, dict) else tool_call["id"]
@@ -109,18 +156,20 @@ class SuperAgent:
                     "role": "tool",
                     "tool_call_id": tool_call_id,
                     "name": function_name,
-                    "content": str(tool_output)
+                    "content": tool_output
                 })
 
             # Send results back to LLM
             messages = [{"role": "system", "content": system_msg}] + self.conversation_history.copy()
             response = self.provider.generate(messages, tools=self.tool_schemas if self.tool_schemas else None)
             response_message = response.choices[0].message
-
+            logger.debug(
+                "iteration=%d completed in %.1fms", iterations, (time.monotonic() - iter_start) * 1000,
+            )
 
         final_content = response_message.content or "Done executing tools."
 
-        # 4. Update memory with response
+        # 3. Update memory with response
         if self.memory_system:
             self.memory_system.add_interaction("agent", final_content)
 

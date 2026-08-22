@@ -80,8 +80,45 @@ python test_main.py
 
 ## Architecture
 
-- `main.py`: The CLI entrypoint.
-- `agent/core.py`: Contains the `SuperAgent` class, which handles the core execution loop, tool invocation, and memory integration.
-- `providers/llm.py`: Contains the simplified API wrappers for OpenAI, Anthropic, and Gemini.
-- `memory/storage.py`: Contains the `MemorySystem` for saving and loading interaction history.
-- `tools/`: Directory containing all agent tools.
+OneAgent is a full-stack agent app: a React dashboard (Vite) talks to an Express API server (`server.ts`), which drives a Python agent core.
+
+### Components
+
+- **Agent core** (`agent/core.py` + `core/agent/`): the `SuperAgent` plan → tool → observe loop. Tool results are structured JSON envelopes (`{status: 'ok'|'error', data}`) so the loop can react to failures; each iteration is logged (tool name, args summary, duration) at DEBUG. Tool loops are capped at 10 iterations.
+- **Tools** (`tools/`, `core/tools/`): web scraper, computer controller, Graph API integration, Tavily search, MCP client. Registered on the agent with generated function-call schemas.
+- **Providers** (`providers/llm.py`, `core/llm/`): lightweight wrappers for OpenAI-compatible, Anthropic, and Gemini APIs. All HTTP calls carry a provider-level timeout (30s); API failures raise `ProviderError` instead of masquerading as model output.
+- **Server** (`server.ts`): Express API gateway serving the dashboard and Python bridge. Request validation middleware rejects non-JSON content types, bodies over 1 MB, and non-object JSON with `400`. A central error middleware returns `{error: 'internal error', correlationId}` — details are logged server-side only.
+- **Dashboard** (`src/`): React/Vite UI (chat workspace, agent runner, skills, scheduler, observability panels).
+- **Memory** (`memory/storage.py`): append-only JSONL store — one line per interaction; reads aggregate only the last 500 entries (no full-file rewrite per message).
+
+### Environment variables
+
+| Variable | Used by | Purpose |
+| --- | --- | --- |
+| `HOST` | server.ts | Bind address (default: `127.0.0.1`) |
+| `GEMINI_API_KEY` | server.ts, providers | Google Gemini API key |
+| `OPENAI_API_KEY` | providers/llm.py | OpenAI / OpenAI-compatible key |
+| `ANTHROPIC_API_KEY` | providers/llm.py | Anthropic API key |
+| `NODE_ENV` | server.ts | `production` serves static `dist/`; otherwise Vite dev middleware |
+
+No `AUTH_TOKEN` is required; the server binds to localhost by default.
+
+## Quickstart
+
+```bash
+# 1. Install dependencies
+npm install
+pip install -r requirements.txt
+
+# 2. Configure keys (.env or environment)
+export GEMINI_API_KEY="your-gemini-key"
+
+# 3. Run the web app (server + dashboard)
+npm run dev            # http://127.0.0.1:3000
+
+# Or run the CLI agent only
+python main.py
+
+# Smoke test
+python test_main.py
+```
