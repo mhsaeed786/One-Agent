@@ -44,3 +44,9 @@ ENV/
 # Agent local files
 memory.json
 *.log
+
+# Local-only CureMD-flavored extensions & data
+extensions/elk/
+extensions/outlook_graph/
+memory.jsonl
+logs/
