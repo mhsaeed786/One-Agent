@@ -78,16 +78,29 @@ async def health():
 
 @app.get("/modules")
 async def list_modules():
-    from core.data.models import get_core_db
-    db = get_core_db()
-    return {"modules": db.list_modules()}
+    try:
+        from core.data.models import get_core_db
+        db = get_core_db()
+        return {"modules": db.list_modules()}
+    except ImportError:
+        # core.data registry not present (e.g. lean install) — fall back to
+        # the standalone module registry in modules/
+        import modules as module_registry
+        return {"modules": module_registry.load_all_modules()}
 
 
 @app.get("/modules/{module_name}")
 async def get_module(module_name: str):
-    from core.data.models import get_core_db
-    db = get_core_db()
-    mod = db.get_module(module_name)
+    try:
+        from core.data.models import get_core_db
+        db = get_core_db()
+        mod = db.get_module(module_name)
+        if mod:
+            return mod
+    except ImportError:
+        pass
+    import modules as module_registry
+    mod = module_registry.get_module(module_name)
     if not mod:
         raise HTTPException(404, f"Module '{module_name}' not found")
     return mod
