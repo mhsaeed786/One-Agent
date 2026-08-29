@@ -63,6 +63,20 @@ class ChromaStore:
             logger.warning(f"ChromaDB init failed ({e}), using in-memory fallback")
             self._initialized = True
 
+    def _degrade_to_fallback(self, reason: str):
+        """Disable the ChromaDB backend and serve from the in-memory store.
+
+        Used when ChromaDB is installed but unusable at runtime (e.g. the
+        default embedding model cannot be downloaded because the network is
+        unavailable). Mirrors the ImportError fallback policy in
+        _ensure_initialized.
+        """
+        logger.warning(
+            f"ChromaDB backend unusable ({reason}); degrading to in-memory fallback"
+        )
+        self._collection = None
+        self._client = None
+
     def add(
         self,
         documents: List[Document],
@@ -73,13 +87,27 @@ class ChromaStore:
         if self._collection is not None:
             ids = [doc.id for doc in documents]
             contents = [doc.content for doc in documents]
-            metadatas = [doc.metadata for doc in documents]
+            # chromadb >=0.4.22 rejects empty metadata dicts in upsert;
+            # normalize empties to a placeholder so documents always land.
+            metadatas = [
+                doc.metadata if doc.metadata else {"source": "oneagent"}
+                for doc in documents
+            ]
 
-            self._collection.upsert(
-                ids=ids,
-                documents=contents,
-                metadatas=metadatas,
-            )
+            try:
+                self._collection.upsert(
+                    ids=ids,
+                    documents=contents,
+                    metadatas=metadatas,
+                )
+            except Exception as e:
+                self._degrade_to_fallback(str(e))
+                for doc in documents:
+                    self._fallback_store[doc.id] = {
+                        "content": doc.content,
+                        "metadata": doc.metadata,
+                    }
+                return [doc.id for doc in documents]
             logger.debug(f"Added {len(documents)} docs to ChromaDB")
             return ids
         else:
@@ -112,7 +140,11 @@ class ChromaStore:
             if where:
                 kwargs["where"] = where
 
-            results = self._collection.query(**kwargs)
+            try:
+                results = self._collection.query(**kwargs)
+            except Exception as e:
+                self._degrade_to_fallback(str(e))
+                return self._keyword_fallback_query(query_text, n_results)
 
             documents = []
             for i in range(len(results["ids"][0])):
@@ -124,18 +156,21 @@ class ChromaStore:
                 })
             return documents
         else:
-            # Fallback: simple keyword matching
-            results = []
-            query_lower = query_text.lower()
-            for doc_id, doc_data in self._fallback_store.items():
-                if query_lower in doc_data["content"].lower():
-                    results.append({
-                        "id": doc_id,
-                        "content": doc_data["content"],
-                        "metadata": doc_data["metadata"],
-                        "distance": None,
-                    })
-            return results[:n_results]
+            return self._keyword_fallback_query(query_text, n_results)
+
+    def _keyword_fallback_query(self, query_text: str, n_results: int) -> List[Dict[str, Any]]:
+        """Simple keyword matching over the in-memory store."""
+        results = []
+        query_lower = query_text.lower()
+        for doc_id, doc_data in self._fallback_store.items():
+            if query_lower in doc_data["content"].lower():
+                results.append({
+                    "id": doc_id,
+                    "content": doc_data["content"],
+                    "metadata": doc_data["metadata"],
+                    "distance": None,
+                })
+        return results[:n_results]
 
     def delete(self, ids: List[str]) -> None:
         """Delete documents by ID."""
