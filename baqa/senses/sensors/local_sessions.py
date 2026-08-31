@@ -88,6 +88,10 @@ class LocalSessionSensor:
             p = obj["payload"]
             if p.get("type") == "message":
                 return p.get("role"), p.get("content"), obj.get("timestamp")
+        # openclaw: {"type":"message","message":{"role":"user","content":[...]}, "timestamp":...}
+        if obj.get("type") == "message" and isinstance(obj.get("message"), dict):
+            m = obj["message"]
+            return m.get("role"), m.get("content"), obj.get("timestamp")
         # generic: {"role":"user","content":...}
         return obj.get("role"), obj.get("content"), obj.get("timestamp")
 

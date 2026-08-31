@@ -22,13 +22,15 @@ class Sensor:
 
 SENSOR_DIRS = {
     # local AI session stores discovered on this PC
-    "hermes": [
+    "hermes_archive": [
         os.path.expanduser(r"~\session-migration-backup-20260822\converted-for-hermes"),
     ],
     "claude_code": [os.path.expanduser(r"~\.claude\projects")],
     "codex": [os.path.expanduser(r"~\.codex\sessions")],
-    "goose": [
-        os.path.expandvars(r"%APPDATA%\Block\goose\data\sessions"),
+    "openclaw": [os.path.expanduser(r"~\.openclaw-autoclaw\agents\main\sessions")],
+    "quarantine": [
+        os.path.expanduser(r"~\session-migration-backup-20260822\quarantine\openclaw"),
+        os.path.expanduser(r"~\session-migration-backup-20260822\quarantine\goose"),
     ],
 }
 
