@@ -333,3 +333,11 @@ async def mind_proposal_decide(proposal_id: str, decision: str):
         return {"approved": proposal_id, "scheduled": result}
     engine.deny(proposal_id)
     return {"denied": proposal_id}
+
+
+@app.get("/mind/runs")
+async def mind_runs(limit: int = 20):
+    """History of every automation the Mind has executed for you."""
+    sys.path.insert(0, str(BASE_DIR))
+    from senses.cronrun import CronRunner
+    return {"runs": CronRunner().history(limit)}
