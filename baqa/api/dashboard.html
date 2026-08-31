@@ -76,6 +76,7 @@ button.ghost { background: var(--panel2); color: var(--fg); border: 1px solid va
       <button data-v="proposals">⚡ Anticipations</button>
       <button data-v="runs">⟳ Automations</button>
       <button data-v="capture">⇩ Capture</button>
+      <button data-v="chat">💬 Command Mind</button>
     </nav>
   </aside>
   <main>
@@ -122,6 +123,19 @@ button.ghost { background: var(--panel2); color: var(--fg); border: 1px solid va
         <b>Manual capture</b>
         <div class="row" style="margin-top:10px"><input type="text" id="cap-text" placeholder="paste any text — it becomes an experience">
         <button class="act" onclick="doCapture()">Absorb</button></div>
+      </div>
+    </section>
+    <section id="v-chat" class="hidden">
+      <h2>Command the Mind</h2>
+      <div class="panel" style="display:flex;flex-direction:column;height:62vh">
+        <div id="chat-log" style="flex:1;overflow-y:auto;padding:6px 2px"></div>
+        <div class="row" style="margin:10px 0 0">
+          <input type="text" id="chat-input" placeholder='try: search fhir · graph teams · run repo_hygiene · proposals · approve last · absorb …'>
+          <button class="act" onclick="sendChat()">Send</button>
+        </div>
+        <div style="color:var(--dim);font-size:11px;margin-top:6px">
+          Read-only queries run instantly. Anything that writes/schedules becomes a <b>pending proposal</b> — nothing executes without your yes.
+        </div>
       </div>
     </section>
   </main>
@@ -229,6 +243,28 @@ async function doCapture() {
 }
 $('q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
 $('node').addEventListener('keydown', e => { if (e.key === 'Enter') doNode(); });
+$('chat-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+
+function chatBubble(text, who) {
+  const div = document.createElement('div');
+  div.className = 'exp';
+  div.innerHTML = `<span class="src">${who}</span><div style="margin-top:4px;white-space:pre-wrap">${who === 'you' ? esc(text) : text}</div>`;
+  $('chat-log').appendChild(div);
+  $('chat-log').scrollTop = $('chat-log').scrollHeight;
+}
+async function sendChat() {
+  const text = $('chat-input').value.trim(); if (!text) return;
+  chatBubble(text, 'you');
+  $('chat-input').value = '';
+  let reply = '…';
+  try {
+    const r = await fetch('/mind/chat', { method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ message: text }) }).then(x => x.json());
+    reply = r.reply || JSON.stringify(r);
+  } catch (e) { reply = 'API error: ' + e; }
+  chatBubble(esc(reply).replace(/\n/g, '<br>'), 'mind');
+}
 load('overview');
 </script>
 </body>

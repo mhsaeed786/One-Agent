@@ -360,3 +360,12 @@ async def mind_capture(request: Request):
 async def dashboard():
     """The Mind's local web app (also wrapped by the desktop launcher)."""
     return FileResponse(os.path.join(BASE_DIR, "dashboard.html"))
+
+
+@app.post("/mind/chat")
+async def mind_chat(request: Request):
+    """Natural-language command surface for the Mind (guardrail-enforced)."""
+    sys.path.insert(0, str(BASE_DIR))
+    body = await request.json()
+    from senses.chat import handle
+    return await asyncio.to_thread(handle, body.get("message", ""))
