@@ -341,3 +341,16 @@ async def mind_runs(limit: int = 20):
     sys.path.insert(0, str(BASE_DIR))
     from senses.cronrun import CronRunner
     return {"runs": CronRunner().history(limit)}
+
+
+@app.post("/mind/capture")
+async def mind_capture(request: Request):
+    """Ingest endpoint for the Mind Capture browser extension.
+
+    Stores the user's prompt ONLY if the web_ai_chats sense is granted;
+    otherwise the payload is dropped with a reason (approval-first).
+    """
+    sys.path.insert(0, str(BASE_DIR))
+    body = await request.json()
+    from senses.sensors.web_capture import capture_instruction
+    return await asyncio.to_thread(capture_instruction, body)

@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Mind Capture",
+  "version": "0.1.0",
+  "description": "The Mind's eyes on the web — captures your prompts on AI chat sites and feeds the local Mind (OneAgent). All data stays on your machine.",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["http://127.0.0.1:8001/*", "http://localhost:8001/*"],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
+        "https://gemini.google.com/*",
+        "https://claude.ai/*",
+        "https://www.perplexity.ai/*",
+        "https://copilot.microsoft.com/*",
+        "https://chat.mistral.ai/*",
+        "https://www.kimi.com/*",
+        "https://chat.deepseek.com/*",
+        "https://x.com/i/grok*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": { "default_popup": "popup.html" }
+}
