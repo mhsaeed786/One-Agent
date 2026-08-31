@@ -50,3 +50,7 @@ extensions/elk/
 extensions/outlook_graph/
 memory.jsonl
 logs/
+
+# Mind personal memory - never push
+data/
+baqa/data/

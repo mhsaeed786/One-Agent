@@ -6,10 +6,14 @@ One app, mounts each module as a router. Run with:
 """
 
 import os
+import sys
+import asyncio
 import time
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, Dict
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -235,3 +239,52 @@ async def generate_module(request: Request):
         "test_passed": result.test_passed,
         "path": result.module_path,
     }
+
+
+# ── Mind (Senses + Memory + Knowledge Graph) ────────────────────────
+
+@app.post("/mind/ingest")
+async def mind_ingest():
+    """One heartbeat: every sense polls, absorbs, learns."""
+    sys.path.insert(0, str(BASE_DIR))
+    from senses.ingest import ingest_once
+    report = await asyncio.to_thread(ingest_once)
+    return report
+
+
+@app.get("/mind/stats")
+async def mind_stats():
+    sys.path.insert(0, str(BASE_DIR))
+    from senses.store import ExperienceStore
+    from senses.graph import KnowledgeGraph
+    store = ExperienceStore()
+    kg = KnowledgeGraph()
+    return {"store": store.stats(), "graph": kg.stats()}
+
+
+@app.get("/mind/search")
+async def mind_search(q: str, limit: int = 20):
+    """Search everything the Mind has ever absorbed."""
+    sys.path.insert(0, str(BASE_DIR))
+    from senses.store import ExperienceStore
+    store = ExperienceStore()
+    results = await asyncio.to_thread(store.search, q, limit)
+    return {"query": q, "results": results}
+
+
+@app.get("/mind/recent")
+async def mind_recent(limit: int = 20, source: str = None):
+    sys.path.insert(0, str(BASE_DIR))
+    from senses.store import ExperienceStore
+    store = ExperienceStore()
+    return {"experiences": store.recent(limit, source)}
+
+
+@app.get("/mind/graph")
+async def mind_graph(node: str = None, limit: int = 10):
+    sys.path.insert(0, str(BASE_DIR))
+    from senses.graph import KnowledgeGraph
+    kg = KnowledgeGraph()
+    if node:
+        return {"node": node, "related": kg.neighbors(node, limit)}
+    return {"top": kg.top_nodes(limit), "stats": kg.stats()}
