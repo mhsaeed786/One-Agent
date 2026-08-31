@@ -288,3 +288,48 @@ async def mind_graph(node: str = None, limit: int = 10):
     if node:
         return {"node": node, "related": kg.neighbors(node, limit)}
     return {"top": kg.top_nodes(limit), "stats": kg.stats()}
+
+
+@app.get("/mind/permissions")
+async def mind_permissions():
+    sys.path.insert(0, str(BASE_DIR))
+    from senses.permissions import PermissionGate
+    return {"permissions": PermissionGate().all()}
+
+
+@app.post("/mind/permissions/{sense}/{decision}")
+async def mind_permission_decide(sense: str, decision: str):
+    """Grant or deny a sense permission: decision = grant | deny."""
+    if decision not in ("grant", "deny"):
+        raise HTTPException(400, "decision must be 'grant' or 'deny'")
+    sys.path.insert(0, str(BASE_DIR))
+    from senses.permissions import PermissionGate
+    gate = PermissionGate()
+    state = gate.grant(sense) if decision == "grant" else gate.deny(sense)
+    return {"sense": sense, "state": state}
+
+
+@app.get("/mind/proposals")
+async def mind_proposals(status: str = "pending"):
+    """What the Mind anticipates you might want automated."""
+    sys.path.insert(0, str(BASE_DIR))
+    from senses.anticipate import AnticipationEngine
+    return {"proposals": AnticipationEngine().list(status)}
+
+
+@app.post("/mind/proposals/{proposal_id}/{decision}")
+async def mind_proposal_decide(proposal_id: str, decision: str):
+    """Your go-ahead: decision = approve | deny. Approved = becomes scheduled."""
+    if decision not in ("approve", "deny"):
+        raise HTTPException(400, "decision must be 'approve' or 'deny'")
+    sys.path.insert(0, str(BASE_DIR))
+    from senses.anticipate import AnticipationEngine
+    engine = AnticipationEngine()
+    if decision == "approve":
+        proposal = engine.approve(proposal_id)
+        # Hand off to the action runner (registered cron actions run on schedule)
+        from senses.runner import register_approved
+        result = await asyncio.to_thread(register_approved, proposal)
+        return {"approved": proposal_id, "scheduled": result}
+    engine.deny(proposal_id)
+    return {"denied": proposal_id}

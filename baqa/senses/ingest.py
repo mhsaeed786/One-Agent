@@ -16,14 +16,25 @@ from . import discover_sensors
 logger = logging.getLogger("mind.ingest")
 
 
-def ingest_once(store: ExperienceStore = None, graph: KnowledgeGraph = None) -> dict:
-    """One heartbeat: all senses -> store -> graph. Returns a report."""
+def ingest_once(store: ExperienceStore = None, graph: KnowledgeGraph = None,
+                engine: "AnticipationEngine" = None) -> dict:
+    """One heartbeat: all senses -> store -> graph -> anticipation."""
+    from .permissions import PermissionGate
     store = store or ExperienceStore()
     graph = graph or KnowledgeGraph()
-    report = {"senses": {}, "absorbed": 0, "dupes": 0, "graph_folded": 0, "ts": time.time()}
+    gate = PermissionGate()
+    report = {"senses": {}, "absorbed": 0, "dupes": 0, "graph_folded": 0,
+              "proposals": [], "ts": time.time()}
 
+    allowed = gate.allowed_senses()
     sensors = discover_sensors()
     for sensor in sensors:
+        # CONSENT GATE: a sense only polls if the user granted permission.
+        # ai_sessions + filesystem were granted during initial setup (2026-08-29).
+        if sensor.id not in allowed:
+            report["senses"][sensor.id] = {"status": gate.state(sensor.id),
+                                           "note": "awaiting user permission"}
+            continue
         try:
             experiences = sensor.poll()
         except Exception as e:
@@ -38,6 +49,14 @@ def ingest_once(store: ExperienceStore = None, graph: KnowledgeGraph = None) -> 
         report["dupes"] += d
 
     report["graph_folded"] = graph.grow_from_store(store)
+
+    # ANTICIPATION: notice patterns, propose automations, wait for 'yes'.
+    from .anticipate import AnticipationEngine
+    engine = engine or AnticipationEngine()
+    try:
+        report["proposals"] = engine.anticipate(store, graph)
+    except Exception as e:
+        report["proposal_error"] = str(e)[:200]
     return report
 
 
