@@ -17,7 +17,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 
 logger = logging.getLogger(__name__)
 
@@ -354,3 +354,9 @@ async def mind_capture(request: Request):
     body = await request.json()
     from senses.sensors.web_capture import capture_instruction
     return await asyncio.to_thread(capture_instruction, body)
+
+
+@app.get("/dashboard")
+async def dashboard():
+    """The Mind's local web app (also wrapped by the desktop launcher)."""
+    return FileResponse(os.path.join(BASE_DIR, "dashboard.html"))
