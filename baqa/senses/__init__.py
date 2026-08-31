@@ -34,12 +34,12 @@ SENSOR_DIRS = {
 
 
 def discover_sensors() -> List[Sensor]:
-    from .sensors import local_sessions, fs_watch, browser, github_repos
+    from .sensors import local_sessions, fs_watch, browser, github_repos, devops
 
     sensors: List[Sensor] = []
     for cls in (local_sessions.LocalSessionSensor, fs_watch.FilesystemSensor,
                 browser.BrowserHistorySensor, browser.BookmarksSensor,
-                github_repos.GitHubReposSensor):
+                github_repos.GitHubReposSensor, devops.DevOpsSensor):
         try:
             s = cls()
             if s.available():
